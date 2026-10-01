@@ -34,7 +34,7 @@ ID_TABLES = ("users", "addresses", "orders", "payments", "shipment", "returns", 
 
 def _q(cur, sql, params=()):
     cur.execute(sql, params)
-    return cur.fetchall()
+    return list(cur.fetchall())   # pymysql returns a tuple; callers concatenate lists
 
 
 def _in(cur, sql, ids):

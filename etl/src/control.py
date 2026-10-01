@@ -108,7 +108,7 @@ class Control:
     def add_manifest(self, run_id, rows):
         self.c.executemany(
             "INSERT OR REPLACE INTO etl_snapshot_manifest (run_id,source_table,pending_rows,max_id)"
-            " VALUES (?,?,?,?)", [(run_id, t, n, mx) for t, n, mx in rows])
+            " VALUES (?,?,?,?)", [(run_id, t, int(n or 0), int(mx or 0)) for t, n, mx in rows])  # MySQL returns Decimal
         self.c.commit()
 
     # ---- incremental state ---------------------------------------------
