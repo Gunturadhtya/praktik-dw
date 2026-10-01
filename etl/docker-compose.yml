@@ -1,0 +1,43 @@
+name: bi-etl
+
+services:
+  staging-db:
+    image: mysql:8.0
+    container_name: staging-db
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${STG_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${STG_DB_NAME}
+      MYSQL_USER: ${STG_USER}
+      MYSQL_PASSWORD: ${STG_PASSWORD}
+      TZ: Asia/Makassar
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_0900_ai_ci
+    ports:
+      - "3309:3306"
+    volumes:
+      - stg_data:/var/lib/mysql
+      - ./initdb:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-p${STG_ROOT_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  etl-service:
+    build: .
+    container_name: etl-service
+    restart: unless-stopped
+    depends_on:
+      staging-db:
+        condition: service_healthy
+    env_file: .env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - etl_logs:/var/log/etl
+      - etl_control:/var/lib/etl      # NEW: SQLite control.db (watermarks) must survive restarts
+
+volumes:
+  stg_data:
+  etl_logs:
+  etl_control:
