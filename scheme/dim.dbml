@@ -1,0 +1,223 @@
+// =====================================================
+// Amazon Clone - Dimensional Model (Kimball star schema)
+// =====================================================
+
+// ---------- DIMENSIONS ----------
+
+Table dim_date {
+  date_key int [pk, note: 'yyyymmdd, e.g. 20260930']
+  full_date date [not null]
+  day_of_month tinyint
+  month_num tinyint
+  month_name varchar(20)
+  quarter tinyint
+  year smallint
+  weekday_name varchar(20)
+  is_weekend boolean
+}
+
+Table dim_customer {
+  customer_key bigint [pk, increment]
+  user_id bigint [not null, note: 'business key from users.id']
+  email varchar(255)
+  full_name varchar(255)
+  registered_at timestamp
+  // password_hash intentionally excluded
+}
+
+Table dim_seller {
+  seller_key bigint [pk, increment]
+  user_id bigint [not null, note: 'business key from users.id (seller role)']
+  email varchar(255)
+  full_name varchar(255)
+}
+
+Table dim_product {
+  product_key bigint [pk, increment]
+  product_id bigint [not null, note: 'business key from products.id']
+  name varchar(255)
+  description text
+  category_level1 varchar(255)
+  category_level2 varchar(255)
+  category_level3 varchar(255)
+  current_price decimal(12,2)
+  effective_from date [note: 'SCD Type 2']
+  effective_to date [note: 'SCD Type 2, 9999-12-31 if current']
+  is_current boolean
+}
+
+Table dim_geography {
+  geo_key bigint [pk, increment]
+  address_id bigint [note: 'business key from addresses.id']
+  city varchar(255)
+  state varchar(255)
+  postal_code varchar(255)
+  country varchar(255)
+}
+
+Table dim_order_status {
+  order_status_key int [pk, increment]
+  status_name varchar(20) [note: 'Pending, Processed, Shipped, Delivered, Cancelled']
+}
+
+Table dim_payment_method {
+  payment_method_key int [pk, increment]
+  method_name varchar(20) [note: 'Credit Card, Wallet, Transfer']
+}
+
+Table dim_payment_status {
+  payment_status_key int [pk, increment]
+  status_name varchar(20) [note: 'Success, Failed, Pending']
+}
+
+Table dim_shipment_status {
+  shipment_status_key int [pk, increment]
+  status_name varchar(20) [note: 'Preparing, In_Transit, Delivered, Returned']
+}
+
+Table dim_return_status {
+  return_status_key int [pk, increment]
+  status_name varchar(20) [note: 'Requested, Approved, Rejected, Refunded']
+}
+
+Table dim_carrier {
+  carrier_key int [pk, increment]
+  carrier_name varchar(255)
+}
+
+Table dim_coupon {
+  coupon_key int [pk, increment]
+  coupon_id int [note: 'business key from coupons.id']
+  code varchar(255)
+  discount_type varchar(20) [note: 'Percentage, Fixed']
+  discount_value decimal(12,2)
+  valid_from datetime
+  valid_until datetime
+}
+
+Table dim_tag {
+  tag_key int [pk, increment]
+  tag_id int [note: 'business key from tags.id']
+  name varchar(255)
+}
+
+Table bridge_product_tag {
+  product_key bigint [ref: > dim_product.product_key]
+  tag_key int [ref: > dim_tag.tag_key]
+
+  indexes {
+    (product_key, tag_key) [pk]
+  }
+}
+
+// ---------- FACTS ----------
+
+// Grain: one order line (order_items)
+Table fact_sales {
+  date_key int [ref: > dim_date.date_key]
+  customer_key bigint [ref: > dim_customer.customer_key]
+  seller_key bigint [ref: > dim_seller.seller_key]
+  product_key bigint [ref: > dim_product.product_key]
+  ship_to_geo_key bigint [ref: > dim_geography.geo_key]
+  order_status_key int [ref: > dim_order_status.order_status_key]
+  order_id bigint [note: 'degenerate dimension']
+  order_item_id bigint [note: 'degenerate dimension']
+  quantity int
+  unit_price decimal(12,2)
+  subtotal decimal(12,2)
+  allocated_discount decimal(12,2) [note: 'order-level discount split across lines']
+
+  indexes {
+    order_item_id [pk]
+  }
+}
+
+// Grain: one coupon applied to one order
+Table fact_order_coupon {
+  date_key int [ref: > dim_date.date_key]
+  customer_key bigint [ref: > dim_customer.customer_key]
+  coupon_key int [ref: > dim_coupon.coupon_key]
+  order_id bigint [note: 'degenerate dimension']
+  discount_applied decimal(12,2)
+
+  indexes {
+    (order_id, coupon_key) [pk]
+  }
+}
+
+// Grain: one payment attempt
+Table fact_payment {
+  payment_id bigint [pk, note: 'degenerate dimension']
+  date_key int [ref: > dim_date.date_key]
+  customer_key bigint [ref: > dim_customer.customer_key]
+  payment_method_key int [ref: > dim_payment_method.payment_method_key]
+  payment_status_key int [ref: > dim_payment_status.payment_status_key]
+  order_id bigint [note: 'degenerate dimension']
+  provider_transaction_id varchar(255) [note: 'degenerate dimension']
+  amount decimal(12,2)
+}
+
+// Grain: one shipment (accumulating snapshot, row updated per milestone)
+Table fact_shipment {
+  shipment_id bigint [pk, note: 'degenerate dimension']
+  customer_key bigint [ref: > dim_customer.customer_key]
+  ship_to_geo_key bigint [ref: > dim_geography.geo_key]
+  carrier_key int [ref: > dim_carrier.carrier_key]
+  shipment_status_key int [ref: > dim_shipment_status.shipment_status_key]
+  shipped_date_key int [ref: > dim_date.date_key, note: 'role-playing date']
+  estimated_delivery_date_key int [ref: > dim_date.date_key, note: 'role-playing date']
+  actual_delivery_date_key int [ref: > dim_date.date_key, note: 'role-playing date']
+  order_id bigint [note: 'degenerate dimension']
+  tracking_number varchar(255) [note: 'degenerate dimension']
+  days_to_ship int [note: 'lag measure']
+  days_to_deliver int [note: 'lag measure']
+  days_late int [note: 'actual vs estimated']
+}
+
+// Grain: one return request
+Table fact_return {
+  return_id int [pk, note: 'degenerate dimension']
+  date_key int [ref: > dim_date.date_key]
+  customer_key bigint [ref: > dim_customer.customer_key]
+  product_key bigint [ref: > dim_product.product_key]
+  seller_key bigint [ref: > dim_seller.seller_key]
+  return_status_key int [ref: > dim_return_status.return_status_key]
+  order_item_id bigint [note: 'degenerate dimension']
+  reason text
+  refund_amount decimal(12,2)
+}
+
+// Grain: one review
+Table fact_review {
+  review_id int [pk, note: 'degenerate dimension']
+  date_key int [ref: > dim_date.date_key]
+  customer_key bigint [ref: > dim_customer.customer_key]
+  product_key bigint [ref: > dim_product.product_key]
+  order_item_id bigint [note: 'degenerate dimension']
+  rating tinyint
+}
+
+// Grain: one product per day (periodic snapshot)
+Table fact_inventory_daily {
+  date_key int [ref: > dim_date.date_key]
+  product_key bigint [ref: > dim_product.product_key]
+  seller_key bigint [ref: > dim_seller.seller_key]
+  stock_quantity int [note: 'semi-additive: do not sum across dates']
+
+  indexes {
+    (date_key, product_key) [pk]
+  }
+}
+
+// Grain: one product in one cart (optional, for funnel analysis)
+Table fact_cart_item {
+  date_key int [ref: > dim_date.date_key, note: 'from added_at']
+  customer_key bigint [ref: > dim_customer.customer_key]
+  product_key bigint [ref: > dim_product.product_key]
+  cart_id bigint [note: 'degenerate dimension']
+  quantity int
+
+  indexes {
+    (cart_id, product_key) [pk]
+  }
+}
