@@ -1,0 +1,27 @@
+name: bi-olap
+
+services:
+  dw-db:
+    image: mysql:8.0
+    container_name: dw-db
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DW_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${DW_DB_NAME}
+      MYSQL_USER: ${DW_USER}
+      MYSQL_PASSWORD: ${DW_PASSWORD}
+      TZ: Asia/Makassar
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_0900_ai_ci
+    ports:
+      - "3308:3306"
+    volumes:
+      - dw_data:/var/lib/mysql
+      - ./initdb:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-p${DW_ROOT_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  dw_data:
