@@ -1,0 +1,25 @@
+services:
+  oltp-db:
+    image: mysql:8.0
+    container_name: oltp-db
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${OLTP_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${OLTP_DB_NAME}
+      MYSQL_USER: ${OLTP_USER}
+      MYSQL_PASSWORD: ${OLTP_PASSWORD}
+      TZ: Asia/Makassar
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    ports:
+      - "${OLTP_PORT}:3306"
+    volumes:
+      - oltp_data:/var/lib/mysql
+      - ./init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-p${OLTP_ROOT_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  oltp_data:
